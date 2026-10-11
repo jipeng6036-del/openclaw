@@ -1,0 +1,38 @@
+name: MCP mirror runtime proof (verification only)
+on:
+  push:
+    branches: [verify/169135-runtime-proof]
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+      - name: Pinned package manager
+        run: npm install --global pnpm@12.9.0
+      - name: Check pinned candidate source
+        run: |
+          git diff d7ef91f29d85a0594855b863351301f0a531454d -- src/agents src/node-host > /tmp/source.diff
+          test ! -s /tmp/source.diff
+          node --version
+          pnpm --version
+      - name: Independent frozen dependency installation
+        run: pnpm install --frozen-lockfile
+      - name: Build shipped Gateway and node runtime
+        run: node --import ./scripts/tsx.mjs scripts/build-all.mts qaRuntime
+      - name: Run configured MCP process proof
+        env:
+          OPENCLAW_E2E_VERBOSE: "1"
+          OPENCLAW_E2E_SKIP_BUILD: "1"
+        shell: bash
+        run: |
+          set -o pipefail
+          /usr/bin/time -p node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts test/e2e/qa-lab/runtime/mcp-structured-mirror-proof.e2e.test.ts 2>&1 | tee /tmp/mcp-proof.log
